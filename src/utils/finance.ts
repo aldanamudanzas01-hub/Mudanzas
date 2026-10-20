@@ -628,7 +628,7 @@ export function calculateFinancialSummary(
   };
 }
 
-const SPANISH_MONTHS_SHORT = [
+export const SPANISH_MONTHS_SHORT = [
   'Ene',
   'Feb',
   'Mar',
@@ -643,7 +643,7 @@ const SPANISH_MONTHS_SHORT = [
   'Dic',
 ] as const;
 
-const SPANISH_MONTHS_FULL = [
+export const SPANISH_MONTHS_FULL = [
   'Enero',
   'Febrero',
   'Marzo',
@@ -663,10 +663,27 @@ export function getPeriodKeyAndLabel(
   granularity: FinancialPeriodGranularity
 ): { periodKey: string; periodLabel: string; shortLabel: string } {
   const clean = (dateInput || '').trim().slice(0, 10);
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean);
-  const year = match ? Number(match[1]) : 2026;
-  const monthIdx = match ? Math.max(0, Math.min(11, Number(match[2]) - 1)) : 9;
-  const day = match ? Math.max(1, Math.min(31, Number(match[3]))) : 19;
+  const fullMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean);
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(clean);
+  const yearMatch = /^(\d{4})$/.exec(clean);
+
+  let year = 2026;
+  let monthIdx = 9;
+  let day = 19;
+
+  if (fullMatch) {
+    year = Number(fullMatch[1]);
+    monthIdx = Math.max(0, Math.min(11, Number(fullMatch[2]) - 1));
+    day = Math.max(1, Math.min(31, Number(fullMatch[3])));
+  } else if (monthMatch) {
+    year = Number(monthMatch[1]);
+    monthIdx = Math.max(0, Math.min(11, Number(monthMatch[2]) - 1));
+    day = 1;
+  } else if (yearMatch) {
+    year = Number(yearMatch[1]);
+    monthIdx = 0;
+    day = 1;
+  }
 
   const pad2 = (n: number) => String(n).padStart(2, '0');
   const isoDay = `${year}-${pad2(monthIdx + 1)}-${pad2(day)}`;
@@ -712,6 +729,38 @@ export function getPeriodKeyAndLabel(
   const periodLabel = `Año ${year}`;
   const shortLabel = `${year}`;
   return { periodKey, periodLabel, shortLabel };
+}
+
+export function resolveSelectedPeriodBucket(
+  periodBuckets: FinancialPeriodBucket[],
+  granularity: FinancialPeriodGranularity,
+  selectedPeriodKey: string
+): FinancialPeriodBucket | null {
+  if (!selectedPeriodKey || selectedPeriodKey === 'todos') {
+    return null;
+  }
+  const existing = periodBuckets.find((b) => b.periodKey === selectedPeriodKey);
+  if (existing) {
+    return existing;
+  }
+  const { periodKey, periodLabel, shortLabel } = getPeriodKeyAndLabel(
+    selectedPeriodKey,
+    granularity
+  );
+  return {
+    periodKey,
+    periodLabel,
+    shortLabel,
+    granularity,
+    contractedAmount: 0,
+    collectedAmount: 0,
+    pendingDebtAmount: 0,
+    expensesAmount: 0,
+    netCashFlow: 0,
+    movesCount: 0,
+    paymentsCount: 0,
+    expensesCount: 0,
+  };
 }
 
 export function calculateFinancialPeriods(

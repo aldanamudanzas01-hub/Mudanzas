@@ -5,7 +5,6 @@ import {
   Wallet,
   FileSpreadsheet,
   Plus,
-  Cloud,
   LogOut,
   ShieldCheck,
   UserCheck,
@@ -41,12 +40,15 @@ import {
   LoginScreen,
   UsersManagementModal,
 } from './components/AuthViews.tsx';
-import { canDeleteClientRecord } from './utils/finance.ts';
+import { InventoryPdfModal } from './components/InventoryPdfModal.tsx';
+import { OfflineIndicator } from './components/PWAInstallButton.tsx';
+import {
+  canDeleteClientRecord,
+  purgeExpiredInventoryPhotos,
+} from './utils/finance.ts';
 import {
   auth,
   onAuthStateChanged,
-  signInWithGoogle,
-  signOutUser,
   testFirestoreConnection,
   fetchUserCloudData,
   saveMoveToFirestore,
@@ -111,12 +113,14 @@ export default function App() {
       const saved = localStorage.getItem(LOCAL_STORAGE_MOVES_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return purgeExpiredInventoryPhotos(parsed).moves;
+        }
       }
     } catch {
       // Fallback to seed
     }
-    return INITIAL_MOVES_SEED;
+    return purgeExpiredInventoryPhotos(INITIAL_MOVES_SEED).moves;
   });
 
   const [expenses, setExpenses] = useState<OperationalExpense[]>(() => {
@@ -134,7 +138,6 @@ export default function App() {
 
   // Cloud user state
   const [user, setUser] = useState<User | null>(null);
-  const [cloudNotice, setCloudNotice] = useState<string | null>(null);
 
   // Selected client drawer & modals
   const [selectedMoveId, setSelectedMoveId] = useState<string | null>(null);
@@ -150,6 +153,7 @@ export default function App() {
   const [deleteModalMoveId, setDeleteModalMoveId] = useState<string | null>(
     null
   );
+  const [pdfModalMoveId, setPdfModalMoveId] = useState<string | null>(null);
   const [isNewMoveModalOpen, setIsNewMoveModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isUsersModalOpen, setIsUsersModalOpen] = useState(false);
@@ -228,12 +232,10 @@ export default function App() {
               });
             }
           }
-          setCloudNotice('Sincronizado con Firebase Firestore');
+          // Cloud sync complete
         } catch (err) {
           console.error('Error sincronizando con Firestore:', err);
         }
-      } else {
-        setCloudNotice(null);
       }
     });
     return () => unsub();
@@ -504,6 +506,9 @@ export default function App() {
       hasDamage: boolean;
       damageNotes: string;
       evidencePhotoDataUrl: string;
+      evidencePhotoCreatedAt?: string;
+      evidencePhotoOriginalBytes?: number;
+      evidencePhotoCompressedBytes?: number;
     }
   ) => {
     const nowIso = new Date().toISOString();
@@ -520,6 +525,11 @@ export default function App() {
                   hasDamage: payload.hasDamage,
                   damageNotes: payload.damageNotes,
                   evidencePhotoDataUrl: payload.evidencePhotoDataUrl,
+                  evidencePhotoCreatedAt: payload.evidencePhotoDataUrl
+                    ? payload.evidencePhotoCreatedAt || nowIso
+                    : '',
+                  evidencePhotoOriginalBytes: payload.evidencePhotoOriginalBytes,
+                  evidencePhotoCompressedBytes: payload.evidencePhotoCompressedBytes,
                   updatedAt: nowIso,
                 }
               : it
@@ -599,9 +609,11 @@ export default function App() {
     moves.find((m) => m.id === paymentModalMoveId) || null;
   const deleteModalMove =
     moves.find((m) => m.id === deleteModalMoveId) || null;
+  const pdfModalMove = moves.find((m) => m.id === pdfModalMoveId) || null;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
+      <OfflineIndicator />
       {/* Strict 3-Zone Top Bar Contract */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 sm:gap-8 no-print">
         {/* Zone 1: Single text element wordmark */}
@@ -680,7 +692,7 @@ export default function App() {
         </nav>
 
         {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             type="button"
             onClick={() => setIsNewMoveModalOpen(true)}
@@ -862,42 +874,6 @@ export default function App() {
               </div>
             </div>
           </div>
-
-          {/* Cloud Backup / Google Auth Panel */}
-          <div className="hidden lg:block pt-4 border-t border-slate-200">
-            {user ? (
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                <div className="text-xs font-semibold text-slate-900 truncate">
-                  {user.displayName || user.email}
-                </div>
-                <div className="text-[11px] text-emerald-700">
-                  {cloudNotice || 'Respaldo Firestore Activo'}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => signOutUser()}
-                  className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Desconectar Nube
-                </button>
-              </div>
-            ) : (
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                <p className="text-[11px] text-slate-600">
-                  Tus datos se guardan automáticamente. Inicia sesión para respaldar en la nube.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => signInWithGoogle()}
-                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  <Cloud className="w-3.5 h-3.5 text-slate-600" />
-                  Sincronizar con Google
-                </button>
-              </div>
-            )}
-          </div>
         </aside>
 
         {/* Main Content Area */}
@@ -912,6 +888,7 @@ export default function App() {
               onOpenNewMoveModal={() => setIsNewMoveModalOpen(true)}
               onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
               onRequestDeleteMove={(id) => setDeleteModalMoveId(id)}
+              onOpenPdfModal={(m) => setPdfModalMoveId(m.id)}
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
@@ -924,6 +901,7 @@ export default function App() {
               onOpenPaymentModal={(id) => setPaymentModalMoveId(id)}
               onOpenNewMoveModal={() => setIsNewMoveModalOpen(true)}
               onRequestDeleteMove={(id) => setDeleteModalMoveId(id)}
+              onOpenPdfModal={(m) => setPdfModalMoveId(m.id)}
               onUpdateInventoryItemDamage={handleUpdateInventoryItemDamage}
             />
           )}
@@ -939,6 +917,7 @@ export default function App() {
               }
               onOpenPaymentModal={(id) => setPaymentModalMoveId(id)}
               onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
+              onOpenPdfModal={(m) => setPdfModalMoveId(m.id)}
             />
           )}
         </main>
@@ -950,12 +929,20 @@ export default function App() {
         userRole={userRole}
         initialTab={drawerInitialTab}
         onClose={() => setSelectedMoveId(null)}
+        onOpenPdfModal={(m) => setPdfModalMoveId(m.id)}
         onAddInventoryItem={handleAddInventoryItem}
         onUpdateInventoryItemDamage={handleUpdateInventoryItemDamage}
         onRemoveInventoryItem={handleRemoveInventoryItem}
         onUpdateMoveStatus={handleUpdateMoveStatus}
         onOpenPaymentModal={(id) => setPaymentModalMoveId(id)}
         onRequestDeleteMove={(id) => setDeleteModalMoveId(id)}
+      />
+
+      <InventoryPdfModal
+        move={pdfModalMove}
+        moves={moves}
+        onSelectMoveId={(id) => setPdfModalMoveId(id)}
+        onClose={() => setPdfModalMoveId(null)}
       />
 
       <NewMoveModal

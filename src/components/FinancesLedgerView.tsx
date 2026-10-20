@@ -9,6 +9,11 @@ import {
   TrendingDown,
   Calendar,
   Filter,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   MoveRecord,
@@ -19,9 +24,12 @@ import {
   calculateFinancialSummary,
   calculateFinancialPeriods,
   getPeriodKeyAndLabel,
+  resolveSelectedPeriodBucket,
   calculateClientBalance,
   calculateInventoryMetrics,
   formatCurrencyCOP,
+  SPANISH_MONTHS_FULL,
+  SPANISH_MONTHS_SHORT,
 } from '../utils/finance.ts';
 
 interface FinancesLedgerViewProps {
@@ -32,6 +40,7 @@ interface FinancesLedgerViewProps {
   onChangeSelectedStatementMoveId: (moveId: string) => void;
   onOpenPaymentModal: (moveId: string) => void;
   onOpenExpenseModal: () => void;
+  onOpenPdfModal?: (move: MoveRecord) => void;
 }
 
 const GRANULARITY_OPTIONS: {
@@ -39,11 +48,14 @@ const GRANULARITY_OPTIONS: {
   label: string;
   singularLabel: string;
 }[] = [
-  { id: 'dia', label: 'Por Días', singularLabel: 'Día' },
-  { id: 'semana', label: 'Por Semanas', singularLabel: 'Semana' },
-  { id: 'mes', label: 'Por Meses', singularLabel: 'Mes' },
-  { id: 'anio', label: 'Por Años', singularLabel: 'Año' },
+  { id: 'dia', label: 'Por Fecha (Calendario)', singularLabel: 'Fecha' },
+  { id: 'mes', label: 'Por Mes', singularLabel: 'Mes' },
+  { id: 'anio', label: 'Por Año', singularLabel: 'Año' },
+  { id: 'semana', label: 'Por Semana', singularLabel: 'Semana' },
 ];
+
+const AVAILABLE_YEARS = [2024, 2025, 2026, 2027];
+const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
   moves,
@@ -53,13 +65,19 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
   onChangeSelectedStatementMoveId,
   onOpenPaymentModal,
   onOpenExpenseModal,
+  onOpenPdfModal,
 }) => {
   const [ledgerFilter, setLedgerFilter] = useState<'todos' | 'ingresos' | 'egresos'>(
     'todos'
   );
   const [periodGranularity, setPeriodGranularity] =
-    useState<FinancialPeriodGranularity>('mes');
+    useState<FinancialPeriodGranularity>('dia');
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>('todos');
+
+  // Calendar dropdown state (defaults to October 2026 where active moves live)
+  const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(false);
+  const [calendarYear, setCalendarYear] = useState<number>(2026);
+  const [calendarMonthIdx, setCalendarMonthIdx] = useState<number>(9); // 9 = Octubre
 
   const metrics = useMemo(
     () => calculateFinancialSummary(moves, expenses),
@@ -71,20 +89,57 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
     [moves, expenses, periodGranularity]
   );
 
+  // Daily buckets map so the dropdown calendar can show dots/amounts on days with activity
+  const dailyBucketsMap = useMemo(() => {
+    const daily = calculateFinancialPeriods(moves, expenses, 'dia');
+    const map = new Map<string, (typeof daily)[number]>();
+    for (const b of daily) {
+      map.set(b.periodKey, b);
+    }
+    return map;
+  }, [moves, expenses]);
+
   const activePeriodBucket = useMemo(
     () =>
-      selectedPeriodKey === 'todos'
-        ? null
-        : periodBuckets.find((b) => b.periodKey === selectedPeriodKey) || null,
-    [periodBuckets, selectedPeriodKey]
+      resolveSelectedPeriodBucket(
+        periodBuckets,
+        periodGranularity,
+        selectedPeriodKey
+      ),
+    [periodBuckets, periodGranularity, selectedPeriodKey]
   );
 
   const activeGranularityMeta =
     GRANULARITY_OPTIONS.find((g) => g.id === periodGranularity) ||
-    GRANULARITY_OPTIONS[2];
+    GRANULARITY_OPTIONS[0];
 
   const activeStatementMove =
     moves.find((m) => m.id === selectedStatementMoveId) || moves[0] || null;
+
+  // Build calendar grid days for (calendarYear, calendarMonthIdx)
+  const calendarGridDays = useMemo(() => {
+    const firstDayUtc = new Date(Date.UTC(calendarYear, calendarMonthIdx, 1));
+    const daysInMonth = new Date(
+      Date.UTC(calendarYear, calendarMonthIdx + 1, 0)
+    ).getUTCDate();
+    // Convert Sunday=0..Saturday=6 into Monday=0..Sunday=6
+    const startWeekday = (firstDayUtc.getUTCDay() + 6) % 7;
+
+    const cells: {
+      dayNumber: number | null;
+      isoDate: string | null;
+    }[] = [];
+
+    for (let i = 0; i < startWeekday; i++) {
+      cells.push({ dayNumber: null, isoDate: null });
+    }
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isoDate = `${calendarYear}-${pad2(calendarMonthIdx + 1)}-${pad2(d)}`;
+      cells.push({ dayNumber: d, isoDate });
+    }
+    return cells;
+  }, [calendarYear, calendarMonthIdx]);
 
   // Build unified cash flow ledger combining client payments (Ingresos) and operational expenses (Egresos)
   const unifiedLedger = useMemo(() => {
@@ -139,7 +194,75 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
 
   const handleGranularityChange = (nextGranularity: FinancialPeriodGranularity) => {
     setPeriodGranularity(nextGranularity);
-    setSelectedPeriodKey('todos');
+    if (nextGranularity === 'mes') {
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      setSelectedPeriodKey(`${calendarYear}-${pad2(calendarMonthIdx + 1)}`);
+    } else if (nextGranularity === 'anio') {
+      setSelectedPeriodKey(`${calendarYear}`);
+    } else {
+      setSelectedPeriodKey('todos');
+    }
+    setIsCalendarOpen(false);
+  };
+
+  const handlePickCalendarDate = (isoDate: string) => {
+    if (!isoDate) return;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+    if (match) {
+      setCalendarYear(Number(match[1]));
+      setCalendarMonthIdx(Math.max(0, Math.min(11, Number(match[2]) - 1)));
+    }
+    setPeriodGranularity('dia');
+    setSelectedPeriodKey(isoDate);
+    setIsCalendarOpen(false);
+  };
+
+  const handleSelectMonthDropdown = (monthValue: string) => {
+    if (monthValue === 'todos') {
+      setPeriodGranularity('mes');
+      setSelectedPeriodKey('todos');
+      return;
+    }
+    const mIdx = Math.max(0, Math.min(11, Number(monthValue)));
+    setCalendarMonthIdx(mIdx);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    setPeriodGranularity('mes');
+    setSelectedPeriodKey(`${calendarYear}-${pad2(mIdx + 1)}`);
+  };
+
+  const handleSelectYearDropdown = (yearValue: string) => {
+    if (yearValue === 'todos') {
+      setPeriodGranularity('anio');
+      setSelectedPeriodKey('todos');
+      return;
+    }
+    const yr = Number(yearValue) || 2026;
+    setCalendarYear(yr);
+    if (periodGranularity === 'mes' && selectedPeriodKey !== 'todos') {
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      setSelectedPeriodKey(`${yr}-${pad2(calendarMonthIdx + 1)}`);
+    } else {
+      setPeriodGranularity('anio');
+      setSelectedPeriodKey(`${yr}`);
+    }
+  };
+
+  const handlePrevCalendarMonth = () => {
+    if (calendarMonthIdx === 0) {
+      setCalendarMonthIdx(11);
+      setCalendarYear((y) => y - 1);
+    } else {
+      setCalendarMonthIdx((m) => m - 1);
+    }
+  };
+
+  const handleNextCalendarMonth = () => {
+    if (calendarMonthIdx === 11) {
+      setCalendarMonthIdx(0);
+      setCalendarYear((y) => y + 1);
+    } else {
+      setCalendarMonthIdx((m) => m + 1);
+    }
   };
 
   const handleExportCSV = () => {
@@ -209,6 +332,16 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {onOpenPdfModal && (
+              <button
+                type="button"
+                onClick={() => onOpenPdfModal(activeStatementMove)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer shadow-xs"
+              >
+                <FileText className="w-4 h-4" />
+                Descargar Inventario PDF
+              </button>
+            )}
             <button
               type="button"
               onClick={handleExportCSV}
@@ -477,7 +610,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
     );
   }
 
-  // Compute displayed KPI values (either filtered to the selected Day/Week/Month/Year or global totals)
+  // Compute displayed KPI values (either filtered to the selected Date/Month/Year or global totals)
   const displayedCollected = activePeriodBucket
     ? activePeriodBucket.collectedAmount
     : metrics.totalCollected;
@@ -501,7 +634,18 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
     1
   );
 
-  // Default mode: 'finanzas' (Organización Financiera por Días, Semanas, Meses y Años + Libro Mayor)
+  // Determine current month dropdown value
+  const currentMonthSelectValue =
+    periodGranularity === 'mes' && selectedPeriodKey !== 'todos'
+      ? String(calendarMonthIdx)
+      : 'todos';
+
+  const currentYearSelectValue =
+    (periodGranularity === 'anio' || periodGranularity === 'mes') &&
+    selectedPeriodKey !== 'todos'
+      ? String(calendarYear)
+      : 'todos';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200 pb-5">
@@ -510,7 +654,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
             Control de Caja en Pesos Colombianos (COP) · Colombia, Venezuela y Ecuador
           </p>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Estado de Mis Finanzas por Días, Semanas, Meses y Años (COP)
+            Estado de Mis Finanzas con Calendario, Mes y Año (COP)
           </h1>
         </div>
 
@@ -534,9 +678,9 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
         </div>
       </div>
 
-      {/* Period Granularity Selector Bar: Días | Semanas | Meses | Años */}
+      {/* Interactive Dropdown Calendar + Month & Year Selector Panel */}
       <section
-        aria-label="Selector de estado financiero por días, semanas, meses y años"
+        aria-label="Selector de estado financiero con calendario desplegable, mes y año"
         className="bg-white border border-slate-200 rounded-xl p-5 space-y-5"
       >
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -544,11 +688,11 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
               <h2 className="text-base font-bold text-slate-900">
-                Consultar Estado de Finanzas por Temporalidad ({activeGranularityMeta.label})
+                Calendario Financiero Desplegable · Consulta por Fecha, Mes y Año
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Analiza tus ingresos cobrados, gastos operativos, deudas por cobrar y utilidad neta agrupados por días, semanas, meses o años
+              Escoge una fecha exacta en el calendario desplegable o filtra directamente el estado de tus finanzas por mes y año
             </p>
           </div>
 
@@ -578,11 +722,352 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
           </div>
         </div>
 
-        {/* Specific Period Filter Strip */}
+        {/* Main Interactive Controls Strip: Dropdown Calendar + Month Selector + Year Selector */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50/90 border border-slate-200/90 rounded-xl p-4">
+          {/* 1. Dropdown Calendar Picker */}
+          <div className="md:col-span-5 relative">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              1. Escoger Fecha en Calendario Desplegable
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="calendar-dropdown-trigger"
+                onClick={() => setIsCalendarOpen((prev) => !prev)}
+                className={`flex-1 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                  periodGranularity === 'dia' && selectedPeriodKey !== 'todos'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-white text-slate-800 border-slate-300 hover:border-slate-400'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2 truncate">
+                  <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    {periodGranularity === 'dia' && activePeriodBucket
+                      ? `Fecha: ${activePeriodBucket.periodLabel}`
+                      : 'Abrir Calendario para Escoger Fecha'}
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    isCalendarOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {/* Native Date Input for instant direct picking */}
+              <input
+                type="date"
+                aria-label="Seleccionar fecha exacta"
+                data-testid="finance-date-input"
+                value={
+                  periodGranularity === 'dia' &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(selectedPeriodKey)
+                    ? selectedPeriodKey
+                    : ''
+                }
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handlePickCalendarDate(e.target.value);
+                  }
+                }}
+                className="px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+              />
+            </div>
+
+            {/* Floating Dropdown Calendar Popover */}
+            {isCalendarOpen && (
+              <div
+                data-testid="calendar-dropdown-popover"
+                className="absolute left-0 top-full mt-2 z-30 w-full sm:w-88 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 space-y-3"
+              >
+                {/* Calendar Header: Month & Year selectors + Prev/Next */}
+                <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handlePrevCalendarMonth}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 cursor-pointer"
+                    aria-label="Mes anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      aria-label="Mes del calendario"
+                      value={calendarMonthIdx}
+                      onChange={(e) => setCalendarMonthIdx(Number(e.target.value))}
+                      className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      {SPANISH_MONTHS_FULL.map((mName, idx) => (
+                        <option key={mName} value={idx}>
+                          {mName}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      aria-label="Año del calendario"
+                      value={calendarYear}
+                      onChange={(e) => setCalendarYear(Number(e.target.value))}
+                      className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold font-mono text-slate-900 cursor-pointer"
+                    >
+                      {AVAILABLE_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleNextCalendarMonth}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 cursor-pointer"
+                    aria-label="Mes siguiente"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Weekday Headers */}
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {WEEKDAYS_SHORT.map((wd) => (
+                    <span
+                      key={wd}
+                      className="text-[10px] font-bold uppercase text-slate-400 py-1"
+                    >
+                      {wd}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Days Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarGridDays.map((cell, idx) => {
+                    if (!cell.dayNumber || !cell.isoDate) {
+                      return <div key={`empty_${idx}`} className="h-9" />;
+                    }
+                    const dayActivity = dailyBucketsMap.get(cell.isoDate);
+                    const isSelectedDate =
+                      periodGranularity === 'dia' &&
+                      selectedPeriodKey === cell.isoDate;
+
+                    return (
+                      <button
+                        key={cell.isoDate}
+                        type="button"
+                        data-testid={`calendar-day-${cell.isoDate}`}
+                        onClick={() => handlePickCalendarDate(cell.isoDate!)}
+                        title={
+                          dayActivity
+                            ? `${cell.isoDate}: Neto ${formatCurrencyCOP(dayActivity.netCashFlow)}`
+                            : `Consultar fecha ${cell.isoDate}`
+                        }
+                        className={`h-9 rounded-lg flex flex-col items-center justify-center text-xs font-mono transition-all cursor-pointer relative border ${
+                          isSelectedDate
+                            ? 'bg-slate-900 text-white border-slate-900 font-bold shadow-xs'
+                            : dayActivity
+                            ? 'bg-emerald-50/90 text-slate-900 border-emerald-300 font-bold hover:bg-emerald-100'
+                            : 'bg-white text-slate-700 border-transparent hover:bg-slate-100 hover:border-slate-200'
+                        }`}
+                      >
+                        <span>{cell.dayNumber}</span>
+                        {dayActivity && (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full mt-0.5 ${
+                              isSelectedDate
+                                ? 'bg-amber-400'
+                                : dayActivity.netCashFlow >= 0
+                                ? 'bg-emerald-600'
+                                : 'bg-red-500'
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Legend & Actions inside Popover */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1.5 text-slate-500">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
+                    Días con movimientos
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pad2 = (n: number) => String(n).padStart(2, '0');
+                        setPeriodGranularity('mes');
+                        setSelectedPeriodKey(
+                          `${calendarYear}-${pad2(calendarMonthIdx + 1)}`
+                        );
+                        setIsCalendarOpen(false);
+                      }}
+                      className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-semibold hover:bg-emerald-100 cursor-pointer"
+                    >
+                      Ver todo {SPANISH_MONTHS_SHORT[calendarMonthIdx]} {calendarYear}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCalendarOpen(false)}
+                      className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 cursor-pointer"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Month Dropdown Selector (Opción de Mes) */}
+          <div className="md:col-span-3">
+            <label
+              htmlFor="finance-month-select"
+              className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
+              2. Filtrar por Mes
+            </label>
+            <select
+              id="finance-month-select"
+              data-testid="finance-month-select"
+              value={currentMonthSelectValue}
+              onChange={(e) => handleSelectMonthDropdown(e.target.value)}
+              className={`w-full px-3 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                periodGranularity === 'mes' && selectedPeriodKey !== 'todos'
+                  ? 'bg-emerald-950 text-white border-emerald-900'
+                  : 'bg-white text-slate-800 border-slate-300 hover:border-slate-400'
+              }`}
+            >
+              <option value="todos">Todos los Meses</option>
+              {SPANISH_MONTHS_FULL.map((monthName, idx) => (
+                <option key={monthName} value={String(idx)}>
+                  {monthName} ({calendarYear})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 3. Year Dropdown Selector (Opción de Año) */}
+          <div className="md:col-span-2">
+            <label
+              htmlFor="finance-year-select"
+              className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
+              3. Filtrar por Año
+            </label>
+            <select
+              id="finance-year-select"
+              data-testid="finance-year-select"
+              value={currentYearSelectValue}
+              onChange={(e) => handleSelectYearDropdown(e.target.value)}
+              className={`w-full px-3 py-2.5 rounded-xl border text-xs font-semibold font-mono transition-colors cursor-pointer ${
+                periodGranularity === 'anio' && selectedPeriodKey !== 'todos'
+                  ? 'bg-emerald-950 text-white border-emerald-900'
+                  : 'bg-white text-slate-800 border-slate-300 hover:border-slate-400'
+              }`}
+            >
+              <option value="todos">Todos los Años</option>
+              {AVAILABLE_YEARS.map((yr) => (
+                <option key={yr} value={String(yr)}>
+                  Año {yr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 4. Reset / Show All Button */}
+          <div className="md:col-span-2">
+            <button
+              type="button"
+              data-testid="finance-reset-period-btn"
+              onClick={() => {
+                setSelectedPeriodKey('todos');
+                setIsCalendarOpen(false);
+              }}
+              className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                selectedPeriodKey === 'todos'
+                  ? 'bg-emerald-700 text-white border-emerald-700'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Ver Todo
+            </button>
+          </div>
+        </div>
+
+        {/* Immediate Selected Date / Month / Year Financial Status Strip */}
+        <div
+          data-testid="selected-period-summary-strip"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-white border border-slate-200 rounded-xl p-4"
+        >
+          <div className="sm:border-r sm:border-slate-100 sm:pr-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+              Periodo Consultado
+            </span>
+            <span className="text-sm font-bold text-slate-900 mt-0.5 block">
+              {activePeriodBucket
+                ? activePeriodBucket.periodLabel
+                : `Acumulado General (${periodBuckets.length} registros)`}
+            </span>
+            <span className="text-[11px] text-slate-500 font-mono">
+              {activePeriodBucket
+                ? `${activePeriodBucket.paymentsCount} abonos · ${activePeriodBucket.expensesCount} gastos`
+                : `${moves.length} mudanzas · ${expenses.length} gastos`}
+            </span>
+          </div>
+
+          <div className="sm:border-r sm:border-slate-100 sm:pr-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
+              Ingresos Cobrados (COP)
+            </span>
+            <span className="text-base font-bold font-mono tabular-nums text-emerald-700 mt-0.5 block">
+              + {formatCurrencyCOP(displayedCollected)}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              Contratado: {formatCurrencyCOP(displayedContracted)}
+            </span>
+          </div>
+
+          <div className="sm:border-r sm:border-slate-100 sm:pr-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-red-600 block">
+              Gastos Operativos (COP)
+            </span>
+            <span className="text-base font-bold font-mono tabular-nums text-red-600 mt-0.5 block">
+              - {formatCurrencyCOP(displayedExpenses)}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              Por cobrar: {formatCurrencyCOP(displayedDebt)}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 block">
+              Utilidad / Flujo Neto
+            </span>
+            <span
+              className={`text-base font-bold font-mono tabular-nums mt-0.5 block ${
+                displayedNetBalance >= 0 ? 'text-emerald-700' : 'text-red-600'
+              }`}
+            >
+              {displayedNetBalance >= 0 ? '+ ' : ''}
+              {formatCurrencyCOP(displayedNetBalance)}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              Balance real en caja (COP)
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Period Filter Pills */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 mr-1">
             <Filter className="w-3.5 h-3.5 text-slate-400" />
-            Filtrar {activeGranularityMeta.singularLabel}:
+            Accesos Rápidos ({activeGranularityMeta.singularLabel}):
           </span>
           <button
             type="button"
@@ -593,7 +1078,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
                 : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
             }`}
           >
-            Todos ({periodBuckets.length} {activeGranularityMeta.label.replace('Por ', '').toLowerCase()})
+            Todos ({periodBuckets.length})
           </button>
           {periodBuckets.map((bucket) => {
             const isSelected = selectedPeriodKey === bucket.periodKey;
@@ -621,7 +1106,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
           })}
         </div>
 
-        {/* Visual Bar Comparison Across Periods (Días, Semanas, Meses o Años) */}
+        {/* Visual Bar Comparison Across Periods */}
         <div className="pt-2 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600">
             <span className="font-semibold text-slate-800">
@@ -811,7 +1296,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
         </div>
       </section>
 
-      {/* Financial Health Summary Strip (Reacts to Selected Period or Total) */}
+      {/* Financial Health Summary Strip (Reacts to Selected Calendar Date, Month, Year or Total) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-5">
           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
@@ -924,7 +1409,7 @@ export const FinancesLedgerView: React.FC<FinancesLedgerViewProps> = ({
               {unifiedLedger.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 px-4 text-center text-xs text-slate-500">
-                    No hay movimientos registrados para el filtro seleccionado.
+                    No hay movimientos registrados para la fecha o filtro seleccionado.
                   </td>
                 </tr>
               ) : (

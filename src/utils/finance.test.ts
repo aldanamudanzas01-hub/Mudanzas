@@ -19,6 +19,7 @@ import {
   calculateImageCompressionStats,
   getPhotoRetentionStatus,
   purgeExpiredInventoryPhotos,
+  resolveSelectedPeriodBucket,
 } from './finance.ts';
 import type { MoveRecord, InventoryItem, OperationalExpense, SystemUser } from '../types.ts';
 
@@ -545,4 +546,27 @@ test('getPhotoRetentionStatus and purgeExpiredInventoryPhotos enforce 15-day aut
     'data:image/jpeg;base64,RECENTPHOTO'
   );
 });
+
+test('resolveSelectedPeriodBucket resolves existing or empty calendar dates, months, and years', () => {
+  const buckets = calculateFinancialPeriods([], [], 'dia');
+  const emptyDay = resolveSelectedPeriodBucket(buckets, 'dia', '2026-10-25');
+  assert.ok(emptyDay);
+  assert.equal(emptyDay.periodKey, '2026-10-25');
+  assert.equal(emptyDay.periodLabel, '25 Oct 2026');
+  assert.equal(emptyDay.netCashFlow, 0);
+
+  const emptyMonth = resolveSelectedPeriodBucket([], 'mes', '2026-11');
+  assert.ok(emptyMonth);
+  assert.equal(emptyMonth.periodKey, '2026-11');
+  assert.equal(emptyMonth.periodLabel, 'Noviembre 2026');
+
+  const emptyYear = resolveSelectedPeriodBucket([], 'anio', '2025');
+  assert.ok(emptyYear);
+  assert.equal(emptyYear.periodKey, '2025');
+  assert.equal(emptyYear.periodLabel, 'Año 2025');
+
+  const allPeriods = resolveSelectedPeriodBucket(buckets, 'dia', 'todos');
+  assert.equal(allPeriods, null);
+});
+
 

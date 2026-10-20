@@ -11,6 +11,8 @@ import {
   Camera,
   AlertTriangle,
   Lock,
+  Download,
+  Clock,
 } from 'lucide-react';
 import type {
   MoveRecord,
@@ -25,6 +27,7 @@ import {
   formatCurrencyCOP,
   canDeleteClientRecord,
   BLUEPRINT_LIMITS,
+  getPhotoRetentionStatus,
 } from '../utils/finance.ts';
 import { CameraEvidenceModal } from './CameraEvidenceModal.tsx';
 
@@ -33,6 +36,7 @@ interface ClientDetailDrawerProps {
   userRole: UserRole;
   initialTab: 'inventory' | 'statement';
   onClose: () => void;
+  onOpenPdfModal: (move: MoveRecord) => void;
   onAddInventoryItem: (
     moveId: string,
     item: Omit<InventoryItem, 'id' | 'ownerId' | 'moveId' | 'createdAt' | 'updatedAt'>
@@ -44,6 +48,9 @@ interface ClientDetailDrawerProps {
       hasDamage: boolean;
       damageNotes: string;
       evidencePhotoDataUrl: string;
+      evidencePhotoCreatedAt?: string;
+      evidencePhotoOriginalBytes?: number;
+      evidencePhotoCompressedBytes?: number;
     }
   ) => void;
   onRemoveInventoryItem: (moveId: string, itemId: string) => void;
@@ -66,6 +73,7 @@ export const ClientDetailDrawer: React.FC<ClientDetailDrawerProps> = ({
   userRole,
   initialTab,
   onClose,
+  onOpenPdfModal,
   onAddInventoryItem,
   onUpdateInventoryItemDamage,
   onRemoveInventoryItem,
@@ -316,6 +324,18 @@ export const ClientDetailDrawer: React.FC<ClientDetailDrawerProps> = ({
               >
                 <FileText className="w-3.5 h-3.5" />
                 Estado de Cuenta y Pagos ({move.payments.length})
+              </button>
+            </div>
+
+            <div className="pb-3">
+              <button
+                type="button"
+                data-testid="drawer-download-pdf-btn"
+                onClick={() => onOpenPdfModal(move)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Descargar Inventario PDF
               </button>
             </div>
           </div>
@@ -604,6 +624,19 @@ export const ClientDetailDrawer: React.FC<ClientDetailDrawerProps> = ({
                                     className="w-16 h-10 object-cover"
                                   />
                                 </button>
+                              )}
+                              {item.evidencePhotoDataUrl && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  {
+                                    getPhotoRetentionStatus(
+                                      item.evidencePhotoCreatedAt ||
+                                        item.updatedAt ||
+                                        item.createdAt
+                                    ).daysRemaining
+                                  }
+                                  d vigencia
+                                </span>
                               )}
                               <button
                                 type="button"

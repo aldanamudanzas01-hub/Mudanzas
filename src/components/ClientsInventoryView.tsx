@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   Lock,
   Camera,
+  Download,
+  Clock,
 } from 'lucide-react';
 import type { MoveRecord, InventoryItem, UserRole } from '../types.ts';
 import {
@@ -17,6 +19,8 @@ import {
   calculateInventoryMetrics,
   formatCurrencyCOP,
   canDeleteClientRecord,
+  getPhotoRetentionStatus,
+  PHOTO_RETENTION_DAYS,
 } from '../utils/finance.ts';
 import { CameraEvidenceModal } from './CameraEvidenceModal.tsx';
 
@@ -27,6 +31,7 @@ interface ClientsInventoryViewProps {
   onOpenPaymentModal: (moveId: string) => void;
   onOpenNewMoveModal: () => void;
   onRequestDeleteMove: (moveId: string) => void;
+  onOpenPdfModal: (move: MoveRecord) => void;
   onUpdateInventoryItemDamage: (
     moveId: string,
     itemId: string,
@@ -34,6 +39,9 @@ interface ClientsInventoryViewProps {
       hasDamage: boolean;
       damageNotes: string;
       evidencePhotoDataUrl: string;
+      evidencePhotoCreatedAt?: string;
+      evidencePhotoOriginalBytes?: number;
+      evidencePhotoCompressedBytes?: number;
     }
   ) => void;
 }
@@ -60,6 +68,7 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
   onOpenPaymentModal,
   onOpenNewMoveModal,
   onRequestDeleteMove,
+  onOpenPdfModal,
   onUpdateInventoryItemDamage,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,14 +116,26 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
             Control de Clientes, Inventario con Cámara y Saldos (COP)
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={onOpenNewMoveModal}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Mudanza / Cliente
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {filteredMoves.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenPdfModal(filteredMoves[0])}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+            >
+              <Download className="w-4 h-4" />
+              Descargar Inventario PDF
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenNewMoveModal}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Mudanza / Cliente
+          </button>
+        </div>
       </div>
 
       {/* Role Permission Banner */}
@@ -322,8 +343,8 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
                     </div>
 
                     <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-md font-medium inline-flex items-center gap-1">
-                      <Camera className="w-3 h-3 text-amber-600" />
-                      Haz clic en &ldquo;Tomar Foto&rdquo; en cualquier artículo para abrir la cámara
+                      <Clock className="w-3 h-3 text-amber-600" />
+                      Fotos comprimidas HD sin pérdida · Se auto-eliminan a los {PHOTO_RETENTION_DAYS} días de publicadas
                     </span>
                   </div>
 
@@ -334,6 +355,13 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
                         item.evidencePhotoDataUrl &&
                           item.evidencePhotoDataUrl.trim().length > 0
                       );
+                      const retention = hasPhoto
+                        ? getPhotoRetentionStatus(
+                            item.evidencePhotoCreatedAt ||
+                              item.updatedAt ||
+                              item.createdAt
+                          )
+                        : null;
                       return (
                         <div
                           key={item.id}
@@ -379,6 +407,11 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
                                     · Daño: {item.damageNotes || 'Reportado'}
                                   </span>
                                 )}
+                                {retention && (
+                                  <span className="text-amber-800 font-medium inline-flex items-center gap-0.5">
+                                    · <Clock className="w-2.5 h-2.5" /> {retention.daysRemaining}d vigencia
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -403,6 +436,15 @@ export const ClientsInventoryView: React.FC<ClientsInventoryViewProps> = ({
 
                   {/* Card Footer Action Bar */}
                   <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      data-testid={`download-pdf-btn-${move.id}`}
+                      onClick={() => onOpenPdfModal(move)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Descargar Inventario PDF
+                    </button>
                     <button
                       type="button"
                       onClick={() => onSelectMove(move.id, 'inventory')}

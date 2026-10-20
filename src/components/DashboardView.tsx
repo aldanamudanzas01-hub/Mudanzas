@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   UserCheck,
   Calendar,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  Download,
 } from 'lucide-react';
 import type {
   MoveRecord,
@@ -24,10 +29,13 @@ import type {
 import {
   calculateFinancialSummary,
   calculateFinancialPeriods,
+  resolveSelectedPeriodBucket,
   calculateClientBalance,
   calculateInventoryMetrics,
   formatCurrencyCOP,
   canDeleteClientRecord,
+  SPANISH_MONTHS_FULL,
+  SPANISH_MONTHS_SHORT,
 } from '../utils/finance.ts';
 
 interface DashboardViewProps {
@@ -39,6 +47,7 @@ interface DashboardViewProps {
   onOpenNewMoveModal: () => void;
   onOpenExpenseModal: () => void;
   onRequestDeleteMove: (moveId: string) => void;
+  onOpenPdfModal: (move: MoveRecord) => void;
   onNavigateTab: (tab: ActiveTab) => void;
 }
 
@@ -53,11 +62,13 @@ const DASHBOARD_PERIOD_TABS: {
   id: FinancialPeriodGranularity;
   label: string;
 }[] = [
-  { id: 'dia', label: 'Por Días' },
-  { id: 'semana', label: 'Por Semanas' },
-  { id: 'mes', label: 'Por Meses' },
-  { id: 'anio', label: 'Por Años' },
+  { id: 'dia', label: 'Por Fecha (Calendario)' },
+  { id: 'mes', label: 'Por Mes' },
+  { id: 'anio', label: 'Por Año' },
 ];
+
+const DASHBOARD_YEARS = [2024, 2025, 2026, 2027];
+const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   moves,
@@ -68,10 +79,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenNewMoveModal,
   onOpenExpenseModal,
   onRequestDeleteMove,
+  onOpenPdfModal,
   onNavigateTab,
 }) => {
   const [dashboardPeriod, setDashboardPeriod] =
-    useState<FinancialPeriodGranularity>('mes');
+    useState<FinancialPeriodGranularity>('dia');
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>('todos');
+  const [isDashCalendarOpen, setIsDashCalendarOpen] = useState<boolean>(false);
+  const [calYear, setCalYear] = useState<number>(2026);
+  const [calMonthIdx, setCalMonthIdx] = useState<number>(9);
 
   const metrics = calculateFinancialSummary(moves, expenses);
   const isAdmin = canDeleteClientRecord(userRole);
@@ -80,6 +96,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     () => calculateFinancialPeriods(moves, expenses, dashboardPeriod),
     [moves, expenses, dashboardPeriod]
   );
+
+  const dailyBucketsMap = useMemo(() => {
+    const daily = calculateFinancialPeriods(moves, expenses, 'dia');
+    const map = new Map<string, (typeof daily)[number]>();
+    for (const b of daily) {
+      map.set(b.periodKey, b);
+    }
+    return map;
+  }, [moves, expenses]);
+
+  const activeDashBucket = useMemo(
+    () =>
+      resolveSelectedPeriodBucket(
+        periodBuckets,
+        dashboardPeriod,
+        selectedPeriodKey
+      ),
+    [periodBuckets, dashboardPeriod, selectedPeriodKey]
+  );
+
+  const calendarCells = useMemo(() => {
+    const firstUtc = new Date(Date.UTC(calYear, calMonthIdx, 1));
+    const daysCount = new Date(Date.UTC(calYear, calMonthIdx + 1, 0)).getUTCDate();
+    const startOffset = (firstUtc.getUTCDay() + 6) % 7;
+    const cells: { day: number | null; iso: string | null }[] = [];
+    for (let i = 0; i < startOffset; i++) {
+      cells.push({ day: null, iso: null });
+    }
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    for (let d = 1; d <= daysCount; d++) {
+      cells.push({
+        day: d,
+        iso: `${calYear}-${pad2(calMonthIdx + 1)}-${pad2(d)}`,
+      });
+    }
+    return cells;
+  }, [calYear, calMonthIdx]);
+
+  const handlePickDashDate = (isoDate: string) => {
+    if (!isoDate) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+    if (m) {
+      setCalYear(Number(m[1]));
+      setCalMonthIdx(Math.max(0, Math.min(11, Number(m[2]) - 1)));
+    }
+    setDashboardPeriod('dia');
+    setSelectedPeriodKey(isoDate);
+    setIsDashCalendarOpen(false);
+  };
 
   const maxContract = Math.max(
     ...metrics.routeBreakdown.map((r) => r.totalContract),
@@ -226,9 +291,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </section>
 
-      {/* Estado de Mis Finanzas por Días, Semanas, Meses y Años */}
+      {/* Estado de Mis Finanzas con Calendario Desplegable, Mes y Año */}
       <section
-        aria-label="Estado de mis finanzas por días, semanas, meses y años"
+        aria-label="Estado de mis finanzas con calendario desplegable, mes y año"
         className="bg-white border border-slate-200 rounded-xl p-6 space-y-5"
       >
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -236,11 +301,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
               <h2 className="text-base font-bold text-slate-900">
-                Estado de Mis Finanzas por Días, Semanas, Meses y Años (COP)
+                Estado de Mis Finanzas · Calendario Desplegable, Mes y Año (COP)
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Resumen de ingresos recibidos, gastos operativos, saldo pendiente y utilidad neta en caja según el periodo seleccionado
+              Escoge una fecha exacta en el calendario desplegable o consulta tus finanzas por mes y año
             </p>
           </div>
 
@@ -248,7 +313,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div
               role="group"
               aria-label="Seleccionar temporalidad financiera en dashboard"
-              className="grid grid-cols-2 sm:inline-flex sm:flex-nowrap items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl w-full sm:w-auto"
+              className="grid grid-cols-3 sm:inline-flex sm:flex-nowrap items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl w-full sm:w-auto"
             >
               {DASHBOARD_PERIOD_TABS.map((tab) => {
                 const active = dashboardPeriod === tab.id;
@@ -257,7 +322,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     key={tab.id}
                     type="button"
                     data-testid={`dashboard-period-${tab.id}`}
-                    onClick={() => setDashboardPeriod(tab.id)}
+                    onClick={() => {
+                      setDashboardPeriod(tab.id);
+                      if (tab.id === 'mes') {
+                        const pad2 = (n: number) => String(n).padStart(2, '0');
+                        setSelectedPeriodKey(`${calYear}-${pad2(calMonthIdx + 1)}`);
+                      } else if (tab.id === 'anio') {
+                        setSelectedPeriodKey(`${calYear}`);
+                      } else {
+                        setSelectedPeriodKey('todos');
+                      }
+                      setIsDashCalendarOpen(false);
+                    }}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap text-center ${
                       active
                         ? 'bg-slate-900 text-white shadow-xs'
@@ -280,66 +356,337 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
+        {/* Interactive Dropdown Calendar + Month + Year Selector Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="md:col-span-5 relative">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+              Calendario Desplegable (Escoger Fecha)
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="dash-calendar-dropdown-trigger"
+                onClick={() => setIsDashCalendarOpen((prev) => !prev)}
+                className={`flex-1 flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                  dashboardPeriod === 'dia' && selectedPeriodKey !== 'todos'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-800 border-slate-300 hover:border-slate-400'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2 truncate">
+                  <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    {dashboardPeriod === 'dia' && activeDashBucket
+                      ? `Fecha: ${activeDashBucket.periodLabel}`
+                      : 'Escoger Fecha en Calendario'}
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    isDashCalendarOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              <input
+                type="date"
+                aria-label="Escoger fecha en dashboard"
+                value={
+                  dashboardPeriod === 'dia' &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(selectedPeriodKey)
+                    ? selectedPeriodKey
+                    : ''
+                }
+                onChange={(e) => {
+                  if (e.target.value) handlePickDashDate(e.target.value);
+                }}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-800 cursor-pointer"
+              />
+            </div>
+
+            {isDashCalendarOpen && (
+              <div
+                data-testid="dash-calendar-dropdown-popover"
+                className="absolute left-0 top-full mt-2 z-30 w-full sm:w-84 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (calMonthIdx === 0) {
+                        setCalMonthIdx(11);
+                        setCalYear((y) => y - 1);
+                      } else {
+                        setCalMonthIdx((m) => m - 1);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 cursor-pointer"
+                    aria-label="Mes anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      aria-label="Seleccionar mes del calendario"
+                      value={calMonthIdx}
+                      onChange={(e) => setCalMonthIdx(Number(e.target.value))}
+                      className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      {SPANISH_MONTHS_FULL.map((mName, idx) => (
+                        <option key={mName} value={idx}>
+                          {mName}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label="Seleccionar año del calendario"
+                      value={calYear}
+                      onChange={(e) => setCalYear(Number(e.target.value))}
+                      className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold font-mono text-slate-900 cursor-pointer"
+                    >
+                      {DASHBOARD_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (calMonthIdx === 11) {
+                        setCalMonthIdx(0);
+                        setCalYear((y) => y + 1);
+                      } else {
+                        setCalMonthIdx((m) => m + 1);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 cursor-pointer"
+                    aria-label="Mes siguiente"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {WEEKDAYS_SHORT.map((wd) => (
+                    <span
+                      key={wd}
+                      className="text-[10px] font-bold uppercase text-slate-400 py-0.5"
+                    >
+                      {wd}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarCells.map((c, idx) => {
+                    if (!c.day || !c.iso) {
+                      return <div key={`empty_${idx}`} className="h-8" />;
+                    }
+                    const dayAct = dailyBucketsMap.get(c.iso);
+                    const isSel =
+                      dashboardPeriod === 'dia' && selectedPeriodKey === c.iso;
+                    return (
+                      <button
+                        key={c.iso}
+                        type="button"
+                        onClick={() => handlePickDashDate(c.iso!)}
+                        className={`h-8 rounded-lg flex flex-col items-center justify-center text-xs font-mono transition-all cursor-pointer border ${
+                          isSel
+                            ? 'bg-slate-900 text-white border-slate-900 font-bold'
+                            : dayAct
+                            ? 'bg-emerald-50 text-slate-900 border-emerald-300 font-bold hover:bg-emerald-100'
+                            : 'bg-white text-slate-700 border-transparent hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>{c.day}</span>
+                        {dayAct && (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isSel
+                                ? 'bg-amber-400'
+                                : dayAct.netCashFlow >= 0
+                                ? 'bg-emerald-600'
+                                : 'bg-red-500'
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="md:col-span-3">
+            <label
+              htmlFor="dash-month-select"
+              className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
+              Opción de Mes
+            </label>
+            <select
+              id="dash-month-select"
+              data-testid="dash-month-select"
+              value={
+                dashboardPeriod === 'mes' && selectedPeriodKey !== 'todos'
+                  ? String(calMonthIdx)
+                  : 'todos'
+              }
+              onChange={(e) => {
+                if (e.target.value === 'todos') {
+                  setDashboardPeriod('mes');
+                  setSelectedPeriodKey('todos');
+                } else {
+                  const mIdx = Number(e.target.value);
+                  setCalMonthIdx(mIdx);
+                  const pad2 = (n: number) => String(n).padStart(2, '0');
+                  setDashboardPeriod('mes');
+                  setSelectedPeriodKey(`${calYear}-${pad2(mIdx + 1)}`);
+                }
+              }}
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 cursor-pointer"
+            >
+              <option value="todos">Todos los Meses</option>
+              {SPANISH_MONTHS_FULL.map((mName, idx) => (
+                <option key={mName} value={String(idx)}>
+                  {mName} ({calYear})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label
+              htmlFor="dash-year-select"
+              className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
+              Opción de Año
+            </label>
+            <select
+              id="dash-year-select"
+              data-testid="dash-year-select"
+              value={
+                (dashboardPeriod === 'anio' || dashboardPeriod === 'mes') &&
+                selectedPeriodKey !== 'todos'
+                  ? String(calYear)
+                  : 'todos'
+              }
+              onChange={(e) => {
+                if (e.target.value === 'todos') {
+                  setDashboardPeriod('anio');
+                  setSelectedPeriodKey('todos');
+                } else {
+                  const yr = Number(e.target.value);
+                  setCalYear(yr);
+                  if (dashboardPeriod === 'mes' && selectedPeriodKey !== 'todos') {
+                    const pad2 = (n: number) => String(n).padStart(2, '0');
+                    setSelectedPeriodKey(`${yr}-${pad2(calMonthIdx + 1)}`);
+                  } else {
+                    setDashboardPeriod('anio');
+                    setSelectedPeriodKey(`${yr}`);
+                  }
+                }
+              }}
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold font-mono text-slate-800 cursor-pointer"
+            >
+              <option value="todos">Todos los Años</option>
+              {DASHBOARD_YEARS.map((yr) => (
+                <option key={yr} value={String(yr)}>
+                  Año {yr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPeriodKey('todos');
+                setIsDashCalendarOpen(false);
+              }}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Ver Todos
+            </button>
+          </div>
+        </div>
+
         {/* Period Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
-          {periodBuckets.slice(0, 4).map((bucket) => (
-            <div
-              key={bucket.periodKey}
-              className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 flex flex-col justify-between space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="text-xs font-bold text-slate-900 block truncate">
-                    {bucket.periodLabel}
-                  </span>
-                  <span className="text-[11px] font-mono text-slate-500 block mt-0.5 whitespace-nowrap">
-                    {bucket.movesCount} mudanzas · {bucket.paymentsCount} abonos
-                  </span>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded shrink-0 ${
-                    bucket.netCashFlow >= 0
-                      ? 'bg-emerald-100 text-emerald-900'
-                      : 'bg-red-100 text-red-900'
-                  }`}
-                >
-                  {bucket.netCashFlow >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'}
-                </span>
-              </div>
-
-              <div className="space-y-1.5 text-xs border-t border-slate-200/80 pt-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-500 shrink-0">Ingresos:</span>
-                  <span className="font-mono tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
-                    +{formatCurrencyCOP(bucket.collectedAmount)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-500 shrink-0">Gastos:</span>
-                  <span className="font-mono tabular-nums font-semibold text-red-600 whitespace-nowrap">
-                    -{formatCurrencyCOP(bucket.expensesAmount)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-500 shrink-0">Por Cobrar:</span>
-                  <span className="font-mono tabular-nums font-medium text-amber-700 whitespace-nowrap">
-                    {formatCurrencyCOP(bucket.pendingDebtAmount)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200 font-bold text-slate-900">
-                  <span className="shrink-0">Flujo Neto:</span>
+          {(activeDashBucket ? [activeDashBucket] : periodBuckets.slice(0, 4)).map(
+            (bucket) => (
+              <div
+                key={bucket.periodKey}
+                className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 ${
+                  activeDashBucket
+                    ? 'bg-emerald-50/50 border-emerald-400 sm:col-span-2 xl:col-span-4'
+                    : 'bg-slate-50/80 border-slate-200'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-900 block truncate">
+                      {activeDashBucket
+                        ? `Estado Financiero Seleccionado: ${bucket.periodLabel}`
+                        : bucket.periodLabel}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500 block mt-0.5 whitespace-nowrap">
+                      {bucket.movesCount} mudanzas · {bucket.paymentsCount} abonos ·{' '}
+                      {bucket.expensesCount} gastos
+                    </span>
+                  </div>
                   <span
-                    className={`font-mono tabular-nums whitespace-nowrap ${
-                      bucket.netCashFlow >= 0 ? 'text-emerald-700' : 'text-red-600'
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded shrink-0 ${
+                      bucket.netCashFlow >= 0
+                        ? 'bg-emerald-100 text-emerald-900'
+                        : 'bg-red-100 text-red-900'
                     }`}
                   >
-                    {bucket.netCashFlow >= 0 ? '+' : ''}
-                    {formatCurrencyCOP(bucket.netCashFlow)}
+                    {bucket.netCashFlow >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'}
                   </span>
                 </div>
+
+                <div className="space-y-1.5 text-xs border-t border-slate-200/80 pt-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500 shrink-0">Ingresos:</span>
+                    <span className="font-mono tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
+                      +{formatCurrencyCOP(bucket.collectedAmount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500 shrink-0">Gastos:</span>
+                    <span className="font-mono tabular-nums font-semibold text-red-600 whitespace-nowrap">
+                      -{formatCurrencyCOP(bucket.expensesAmount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500 shrink-0">Por Cobrar:</span>
+                    <span className="font-mono tabular-nums font-medium text-amber-700 whitespace-nowrap">
+                      {formatCurrencyCOP(bucket.pendingDebtAmount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200 font-bold text-slate-900">
+                    <span className="shrink-0">Flujo Neto:</span>
+                    <span
+                      className={`font-mono tabular-nums whitespace-nowrap ${
+                        bucket.netCashFlow >= 0 ? 'text-emerald-700' : 'text-red-600'
+                      }`}
+                    >
+                      {bucket.netCashFlow >= 0 ? '+' : ''}
+                      {formatCurrencyCOP(bucket.netCashFlow)}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          )}
         </div>
       </section>
 
@@ -608,13 +955,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Seguimiento de inventario que lleva cada cliente en Colombia, Venezuela y Ecuador, cuánto ha pagado y cuánto debe
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigateTab('clientes')}
-            className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            Ver Catálogo Completo de Clientes
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {moves.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpenPdfModal(moves[0])}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Descargar Inventario PDF
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onNavigateTab('clientes')}
+              className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Ver Catálogo Completo de Clientes
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -707,6 +1066,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                     <td className="py-3.5 px-4 align-top text-right">
                       <div className="inline-flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onOpenPdfModal(move)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          PDF Inventario
+                        </button>
                         <button
                           type="button"
                           onClick={() => onSelectMove(move.id, 'inventory')}
