@@ -1,0 +1,10 @@
+{
+  "name": "Aldana Mudanzas Control",
+  "description": "Sistema profesional de gestión logística de mudanzas, control de inventario por cliente, rutas interurbanas y estado de cuenta financiero.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

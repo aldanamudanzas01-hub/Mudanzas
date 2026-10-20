@@ -1,0 +1,392 @@
+{
+  "entities": {
+    "MoveRecord": {
+      "title": "MoveRecord",
+      "description": "Expediente principal de mudanza de un cliente con ruta origen-destino y totales financieros.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID del usuario propietario del registro",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "folio": {
+          "type": "string",
+          "description": "Folio único de servicio de mudanza",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Nombre completo del cliente o empresa",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientPhone": {
+          "type": "string",
+          "description": "Teléfono de contacto del cliente",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "clientEmail": {
+          "type": "string",
+          "description": "Correo electrónico del cliente",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "originCity": {
+          "type": "string",
+          "description": "Ciudad y estado de origen de la mudanza",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "destinationCity": {
+          "type": "string",
+          "description": "Ciudad y estado de destino de la mudanza",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "moveDate": {
+          "type": "string",
+          "description": "Fecha programada de salida (YYYY-MM-DD)",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "description": "Estado operativo de la mudanza",
+          "enum": ["programada", "en_transito", "entregada", "liquidada"]
+        },
+        "truckUnit": {
+          "type": "string",
+          "description": "Unidad o camión asignado al flete",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "distanceKm": {
+          "type": "number",
+          "description": "Distancia estimada en kilómetros entre origen y destino"
+        },
+        "totalContractAmount": {
+          "type": "number",
+          "description": "Costo total cotizado del servicio de mudanza"
+        },
+        "amountPaid": {
+          "type": "number",
+          "description": "Total acumulado pagado por el cliente hasta la fecha"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Observaciones operativas o de acceso",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de creación en servidor"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de última actualización en servidor"
+        }
+      },
+      "required": [
+        "ownerId",
+        "folio",
+        "clientName",
+        "clientPhone",
+        "clientEmail",
+        "originCity",
+        "destinationCity",
+        "moveDate",
+        "status",
+        "truckUnit",
+        "distanceKm",
+        "totalContractAmount",
+        "amountPaid",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Artículo individual dentro del inventario de mudanza de un cliente.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID del propietario del registro",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moveId": {
+          "type": "string",
+          "description": "ID de la mudanza padre",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nombre o descripción del mueble/caja/artículo",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Categoría de inventario",
+          "enum": [
+            "Sala y Comedor",
+            "Recámara",
+            "Línea Blanca",
+            "Cocina y Cajas",
+            "Oficina y Electrónicos",
+            "Especial / Frágil"
+          ]
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Cantidad de piezas idénticas"
+        },
+        "volumeM3": {
+          "type": "number",
+          "description": "Volumen unitario estimado en metros cúbicos"
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "Peso unitario estimado en kilogramos"
+        },
+        "isFragile": {
+          "type": "boolean",
+          "description": "Indica si requiere manejo frágil o emplayado especial"
+        },
+        "conditionNotes": {
+          "type": "string",
+          "description": "Estado físico al cargar o notas de embalaje",
+          "minLength": 0,
+          "maxLength": 250
+        },
+        "hasDamage": {
+          "type": "boolean",
+          "description": "Indica si el artículo presenta mal estado o daño previo al cargar"
+        },
+        "damageNotes": {
+          "type": "string",
+          "description": "Observación detallada del mal estado o daño evidenciado",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "evidencePhotoDataUrl": {
+          "type": "string",
+          "description": "Miniatura fotográfica comprimida de la evidencia capturada con cámara",
+          "minLength": 0,
+          "maxLength": 65000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de creación en servidor"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de actualización en servidor"
+        }
+      },
+      "required": [
+        "ownerId",
+        "moveId",
+        "name",
+        "category",
+        "quantity",
+        "volumeM3",
+        "weightKg",
+        "isFragile",
+        "conditionNotes",
+        "hasDamage",
+        "damageNotes",
+        "evidencePhotoDataUrl",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PaymentEntry": {
+      "title": "PaymentEntry",
+      "description": "Abono o pago registrado en el estado de cuenta de una mudanza.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID del propietario del registro",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moveId": {
+          "type": "string",
+          "description": "ID de la mudanza padre",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Monto abonado en moneda local"
+        },
+        "date": {
+          "type": "string",
+          "description": "Fecha del pago (YYYY-MM-DD)",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "method": {
+          "type": "string",
+          "description": "Método de pago utilizado en Pesos Colombianos (COP)",
+          "enum": [
+            "Transferencia Bancolombia / PSE",
+            "Nequi / Daviplata",
+            "Efectivo COP",
+            "Tarjeta / Datáfono",
+            "Consignación Bancaria",
+            "Transferencia SPEI",
+            "Efectivo",
+            "Tarjeta",
+            "Depósito Bancario"
+          ]
+        },
+        "concept": {
+          "type": "string",
+          "description": "Concepto del abono (ej. Anticipo 50%, Liquidación al descargar)",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reference": {
+          "type": "string",
+          "description": "Referencia bancaria o folio de recibo",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de creación en servidor"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de actualización en servidor"
+        }
+      },
+      "required": [
+        "ownerId",
+        "moveId",
+        "amount",
+        "date",
+        "method",
+        "concept",
+        "reference",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "OperationalExpense": {
+      "title": "OperationalExpense",
+      "description": "Gasto operativo de flete, combustible, casetas o maniobras para organizar las finanzas.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID del propietario del registro",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moveId": {
+          "type": "string",
+          "description": "ID opcional de la mudanza asociada o cadena vacía para gasto general",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "description": "Categoría de egreso operativo",
+          "enum": [
+            "Combustible y Diésel",
+            "Casetas y Peajes",
+            "Maniobras y Cargadores",
+            "Material de Embalaje",
+            "Mantenimiento de Unidad",
+            "Otros"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Descripción detallada del gasto",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "amount": {
+          "type": "number",
+          "description": "Monto del gasto operativo"
+        },
+        "date": {
+          "type": "string",
+          "description": "Fecha del gasto (YYYY-MM-DD)",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "routeLabel": {
+          "type": "string",
+          "description": "Etiqueta de ruta o unidad asociada",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de creación en servidor"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de actualización en servidor"
+        }
+      },
+      "required": [
+        "ownerId",
+        "moveId",
+        "category",
+        "description",
+        "amount",
+        "date",
+        "routeLabel",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/moves/{moveId}": {
+      "schema": { "$ref": "#/entities/MoveRecord" },
+      "description": "Expedientes de mudanzas por cliente"
+    },
+    "/moves/{moveId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Subcolección de artículos de inventario por mudanza"
+    },
+    "/moves/{moveId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/PaymentEntry" },
+      "description": "Subcolección de pagos y abonos del estado de cuenta por mudanza"
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/OperationalExpense" },
+      "description": "Gastos operativos del negocio de mudanzas"
+    }
+  }
+}

@@ -1,0 +1,290 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'aldanamudanzas01@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidMoveRecord(data) {
+      return data.keys().hasAll([
+        'ownerId', 'folio', 'clientName', 'clientPhone', 'clientEmail',
+        'originCity', 'destinationCity', 'moveDate', 'status', 'truckUnit',
+        'distanceKm', 'totalContractAmount', 'amountPaid', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'folio', 'clientName', 'clientPhone', 'clientEmail',
+        'originCity', 'destinationCity', 'moveDate', 'status', 'truckUnit',
+        'distanceKm', 'totalContractAmount', 'amountPaid', 'notes',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId == request.auth.uid &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.folio is string && data.folio.size() >= 1 && data.folio.size() <= 40 &&
+      data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 120 &&
+      data.clientPhone is string && data.clientPhone.size() >= 1 && data.clientPhone.size() <= 40 &&
+      data.clientEmail is string && data.clientEmail.size() <= 120 &&
+      data.originCity is string && data.originCity.size() >= 1 && data.originCity.size() <= 100 &&
+      data.destinationCity is string && data.destinationCity.size() >= 1 && data.destinationCity.size() <= 100 &&
+      data.moveDate is string && data.moveDate.size() >= 1 && data.moveDate.size() <= 30 &&
+      data.status is string && data.status.size() <= 20 && data.status in ['programada', 'en_transito', 'entregada', 'liquidada'] &&
+      data.truckUnit is string && data.truckUnit.size() >= 1 && data.truckUnit.size() <= 60 &&
+      data.distanceKm is number && data.distanceKm >= 0 && data.distanceKm <= 25000 &&
+      data.totalContractAmount is number && data.totalContractAmount >= 0 && data.totalContractAmount <= 2000000000 &&
+      data.amountPaid is number && data.amountPaid >= 0 && data.amountPaid <= data.totalContractAmount &&
+      data.notes is string && data.notes.size() <= 500 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidInventoryItem(data, moveId) {
+      return data.keys().hasAll([
+        'ownerId', 'moveId', 'name', 'category', 'quantity',
+        'volumeM3', 'weightKg', 'isFragile', 'conditionNotes',
+        'hasDamage', 'damageNotes', 'evidencePhotoDataUrl',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'moveId', 'name', 'category', 'quantity',
+        'volumeM3', 'weightKg', 'isFragile', 'conditionNotes',
+        'hasDamage', 'damageNotes', 'evidencePhotoDataUrl',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId == request.auth.uid &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.moveId == moveId &&
+      data.moveId is string && data.moveId.size() >= 1 && data.moveId.size() <= 128 && data.moveId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+      data.category is string && data.category.size() <= 40 && data.category in [
+        'Sala y Comedor', 'Recámara', 'Línea Blanca',
+        'Cocina y Cajas', 'Oficina y Electrónicos', 'Especial / Frágil'
+      ] &&
+      data.quantity is number && data.quantity >= 1 && data.quantity <= 10000 &&
+      data.volumeM3 is number && data.volumeM3 >= 0 && data.volumeM3 <= 1000 &&
+      data.weightKg is number && data.weightKg >= 0 && data.weightKg <= 50000 &&
+      data.isFragile is bool &&
+      data.conditionNotes is string && data.conditionNotes.size() <= 250 &&
+      data.hasDamage is bool &&
+      data.damageNotes is string && data.damageNotes.size() <= 300 &&
+      data.evidencePhotoDataUrl is string && data.evidencePhotoDataUrl.size() <= 65000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPaymentEntry(data, moveId) {
+      return data.keys().hasAll([
+        'ownerId', 'moveId', 'amount', 'date', 'method',
+        'concept', 'reference', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'moveId', 'amount', 'date', 'method',
+        'concept', 'reference', 'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId == request.auth.uid &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.moveId == moveId &&
+      data.moveId is string && data.moveId.size() >= 1 && data.moveId.size() <= 128 && data.moveId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.amount is number && data.amount > 0 && data.amount <= 2000000000 &&
+      data.date is string && data.date.size() >= 1 && data.date.size() <= 30 &&
+      data.method is string && data.method.size() <= 40 && data.method in [
+        'Transferencia Bancolombia / PSE', 'Nequi / Daviplata', 'Efectivo COP',
+        'Tarjeta / Datáfono', 'Consignación Bancaria',
+        'Transferencia SPEI', 'Efectivo', 'Tarjeta', 'Depósito Bancario'
+      ] &&
+      data.concept is string && data.concept.size() >= 1 && data.concept.size() <= 160 &&
+      data.reference is string && data.reference.size() <= 80 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidOperationalExpense(data) {
+      return data.keys().hasAll([
+        'ownerId', 'moveId', 'category', 'description', 'amount',
+        'date', 'routeLabel', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'moveId', 'category', 'description', 'amount',
+        'date', 'routeLabel', 'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId == request.auth.uid &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.moveId is string && data.moveId.size() <= 128 &&
+      data.category is string && data.category.size() <= 40 && data.category in [
+        'Combustible y Diésel', 'Casetas y Peajes', 'Maniobras y Cargadores',
+        'Material de Embalaje', 'Mantenimiento de Unidad', 'Otros'
+      ] &&
+      data.description is string && data.description.size() >= 1 && data.description.size() <= 160 &&
+      data.amount is number && data.amount > 0 && data.amount <= 2000000000 &&
+      data.date is string && data.date.size() >= 1 && data.date.size() <= 30 &&
+      data.routeLabel is string && data.routeLabel.size() <= 120 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    match /moves/{moveId} {
+      allow get: if isSignedIn() && isValidId(moveId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+        isValidId(moveId) &&
+        isValidMoveRecord(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+        isValidId(moveId) &&
+        isValidMoveRecord(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().status != 'liquidada' && (
+              (existing().ownerId == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['amountPaid', 'status', 'updatedAt'])) ||
+              (existing().ownerId == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'clientName', 'clientPhone', 'clientEmail', 'originCity',
+                  'destinationCity', 'moveDate', 'status', 'truckUnit',
+                  'distanceKm', 'totalContractAmount', 'amountPaid', 'notes', 'updatedAt'
+                ]))
+            )
+          )
+        );
+
+      // Only Administrador is allowed to delete created clients (moves)
+      allow delete: if isAdmin() && isValidId(moveId);
+
+      match /inventory/{itemId} {
+        allow get: if isSignedIn() && isValidId(moveId) && isValidId(itemId) &&
+          existing().ownerId == request.auth.uid &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+
+        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(itemId) &&
+          isValidInventoryItem(incoming(), moveId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+
+        allow update: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(itemId) &&
+          isValidInventoryItem(incoming(), moveId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().moveId == existing().moveId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            isAdmin() ||
+            (existing().ownerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'category', 'quantity', 'volumeM3',
+                'weightKg', 'isFragile', 'conditionNotes',
+                'hasDamage', 'damageNotes', 'evidencePhotoDataUrl', 'updatedAt'
+              ]) &&
+              get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid)
+          );
+
+        allow delete: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(itemId) &&
+          existing().ownerId == request.auth.uid &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+      }
+
+      match /payments/{paymentId} {
+        allow get: if isSignedIn() && isValidId(moveId) && isValidId(paymentId) &&
+          existing().ownerId == request.auth.uid &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+
+        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(paymentId) &&
+          isValidPaymentEntry(incoming(), moveId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+
+        allow update: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(paymentId) &&
+          isValidPaymentEntry(incoming(), moveId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().moveId == existing().moveId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            isAdmin() ||
+            (existing().ownerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'amount', 'date', 'method', 'concept', 'reference', 'updatedAt'
+              ]) &&
+              get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid)
+          );
+
+        allow delete: if isSignedIn() &&
+          isValidId(moveId) &&
+          isValidId(paymentId) &&
+          existing().ownerId == request.auth.uid &&
+          get(/databases/$(database)/documents/moves/$(moveId)).data.ownerId == request.auth.uid;
+      }
+    }
+
+    match /expenses/{expenseId} {
+      allow get: if isSignedIn() && isValidId(expenseId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+        isValidId(expenseId) &&
+        isValidOperationalExpense(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+        isValidId(expenseId) &&
+        isValidOperationalExpense(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'moveId', 'category', 'description', 'amount', 'date', 'routeLabel', 'updatedAt'
+            ]))
+        );
+
+      allow delete: if isSignedIn() && isValidId(expenseId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}
